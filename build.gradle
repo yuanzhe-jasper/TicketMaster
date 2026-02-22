@@ -10,6 +10,9 @@ repositories {
 }
 
 dependencies {
+    implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
+    implementation 'com.amazonaws:aws-lambda-java-events:3.11.4'
+
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -17,4 +20,16 @@ dependencies {
 
 test {
     useJUnitPlatform()
+}
+
+// Builds a layer ZIP containing all runtime dependencies
+// Output: build/layer/layer.zip
+// Structure inside ZIP: java/lib/*.jar  (required by AWS Java Lambda runtime)
+tasks.register('buildLayer', Zip) {
+    destinationDirectory = file("$buildDir/layer")
+    archiveFileName = 'layer.zip'
+
+    into('java/lib') {
+        from configurations.runtimeClasspath
+    }
 }
