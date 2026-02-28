@@ -12,3 +12,13 @@ output "get_events_lambda_arn" {
   description = "ARN of the get-events Lambda function"
   value       = module.get_events_lambda.function_arn
 }
+
+output "api_endpoint" {
+  description = "Base URL of the HTTP API Gateway"
+  value       = aws_apigatewayv2_api.this.api_endpoint
+}
+
+output "get_events_url" {
+  description = "Full URL for GET /events"
+  value       = "${aws_apigatewayv2_api.this.api_endpoint}/events"
+}
