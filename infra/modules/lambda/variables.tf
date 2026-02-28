@@ -48,6 +48,12 @@ variable "additional_policy_arns" {
   default     = []
 }
 
+variable "layer_arns" {
+  description = "Lambda layer ARNs to attach to the function (e.g. shared dependencies layer)"
+  type        = list(string)
+  default     = []
+}
+
 variable "environment" {
   description = "Deployment environment (dev, staging, prod)"
   type        = string

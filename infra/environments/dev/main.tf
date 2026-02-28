@@ -39,6 +39,17 @@ resource "aws_s3_bucket_public_access_block" "lambda_artifacts" {
 }
 
 # ---------------------------------------------------------------------------
+# Lambda layer — shared runtime dependencies (aws-lambda-java-core, etc.)
+# ---------------------------------------------------------------------------
+
+resource "aws_lambda_layer_version" "dependencies" {
+  layer_name          = "ticketmaster-dependencies-${var.environment}"
+  s3_bucket           = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key              = "layers/dependencies/layer.zip"
+  compatible_runtimes = ["java21"]
+}
+
+# ---------------------------------------------------------------------------
 # Lambda functions
 # ---------------------------------------------------------------------------
 
@@ -50,6 +61,8 @@ module "get_events_lambda" {
   s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
   s3_key        = "functions/get-events/function.jar"
   environment   = var.environment
+
+  layer_arns = [aws_lambda_layer_version.dependencies.arn]
 
   environment_variables = {
     ENVIRONMENT = var.environment

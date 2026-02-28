@@ -45,6 +45,8 @@ resource "aws_lambda_function" "this" {
   s3_bucket = var.s3_bucket
   s3_key    = var.s3_key
 
+  layers = var.layer_arns
+
   dynamic "environment" {
     for_each = length(var.environment_variables) > 0 ? [1] : []
     content {
