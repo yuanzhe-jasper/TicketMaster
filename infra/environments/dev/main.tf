@@ -70,7 +70,7 @@ module "get_events_lambda" {
 }
 
 # ---------------------------------------------------------------------------
-# API Gateway (HTTP API v2)
+# API Gateway (HTTP API v2) - Rest is v1
 # ---------------------------------------------------------------------------
 
 resource "aws_apigatewayv2_api" "this" {
