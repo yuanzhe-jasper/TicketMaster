@@ -22,3 +22,13 @@ output "get_events_url" {
   description = "Full URL for GET /events"
   value       = "${aws_apigatewayv2_api.this.api_endpoint}/events"
 }
+
+output "create_event_url" {
+  description = "Full URL for POST /events"
+  value       = "${aws_apigatewayv2_api.this.api_endpoint}/events"
+}
+
+output "events_table_name" {
+  description = "DynamoDB events table name"
+  value       = aws_dynamodb_table.events.name
+}

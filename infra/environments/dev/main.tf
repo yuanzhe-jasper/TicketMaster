@@ -50,6 +50,35 @@ resource "aws_lambda_layer_version" "dependencies" {
 }
 
 # ---------------------------------------------------------------------------
+# DynamoDB tables
+# ---------------------------------------------------------------------------
+
+resource "aws_dynamodb_table" "events" {
+  name         = "ticketmaster-events-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+
+# IAM policy — allows writing to the events table
+resource "aws_iam_policy" "dynamodb_events_write" {
+  name = "ticketmaster-events-write-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:PutItem"]
+      Resource = aws_dynamodb_table.events.arn
+    }]
+  })
+}
+
+# ---------------------------------------------------------------------------
 # Lambda functions
 # ---------------------------------------------------------------------------
 
@@ -66,6 +95,24 @@ module "get_events_lambda" {
 
   environment_variables = {
     ENVIRONMENT = var.environment
+  }
+}
+
+module "create_event_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-create-event-${var.environment}"
+  handler       = "org.example.handlers.CreateEventHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/create-event/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_events_write.arn]
+
+  environment_variables = {
+    ENVIRONMENT  = var.environment
+    EVENTS_TABLE = aws_dynamodb_table.events.name
   }
 }
 
@@ -109,6 +156,29 @@ resource "aws_lambda_permission" "get_events" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
   function_name = module.get_events_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
+}
+
+# POST /events
+resource "aws_apigatewayv2_integration" "create_event" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = module.create_event_lambda.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "create_event" {
+  api_id    = aws_apigatewayv2_api.this.id
+  route_key = "POST /events"
+  target    = "integrations/${aws_apigatewayv2_integration.create_event.id}"
+}
+
+# Allow API Gateway to invoke the Lambda
+resource "aws_lambda_permission" "create_event" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = module.create_event_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }
