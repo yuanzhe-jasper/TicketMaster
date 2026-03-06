@@ -175,6 +175,7 @@ resource "aws_apigatewayv2_route" "create_event" {
 }
 
 # Allow API Gateway to invoke the Lambda
+# TODO: need to use a module for this so we don't need to write resource codes every time
 resource "aws_lambda_permission" "create_event" {
   statement_id  = "AllowAPIGatewayInvoke"
   action        = "lambda:InvokeFunction"
