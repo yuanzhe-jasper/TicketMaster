@@ -42,11 +42,17 @@ resource "aws_s3_bucket_public_access_block" "lambda_artifacts" {
 # Lambda layer — shared runtime dependencies (aws-lambda-java-core, etc.)
 # ---------------------------------------------------------------------------
 
+data "aws_s3_object" "layer" {
+  bucket = aws_s3_bucket.lambda_artifacts.bucket
+  key    = "layers/dependencies/layer.zip"
+}
+
 resource "aws_lambda_layer_version" "dependencies" {
   layer_name          = "ticketmaster-dependencies-${var.environment}"
   s3_bucket           = aws_s3_bucket.lambda_artifacts.bucket
   s3_key              = "layers/dependencies/layer.zip"
   compatible_runtimes = ["java21"]
+  source_code_hash    = data.aws_s3_object.layer.etag
 }
 
 # ---------------------------------------------------------------------------
@@ -62,6 +68,20 @@ resource "aws_dynamodb_table" "events" {
     name = "id"
     type = "S"
   }
+}
+
+# IAM policy — allows reading from the events table
+resource "aws_iam_policy" "dynamodb_events_read" {
+  name = "ticketmaster-events-read-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:Query"]
+      Resource = aws_dynamodb_table.events.arn
+    }]
+  })
 }
 
 # IAM policy — allows writing to the events table
@@ -93,8 +113,11 @@ module "get_events_lambda" {
 
   layer_arns = [aws_lambda_layer_version.dependencies.arn]
 
+  additional_policy_arns = [aws_iam_policy.dynamodb_events_read.arn]
+
   environment_variables = {
-    ENVIRONMENT = var.environment
+    ENVIRONMENT  = var.environment
+    EVENTS_TABLE = aws_dynamodb_table.events.name
   }
 
   api_gateway_id            = aws_apigatewayv2_api.this.id
