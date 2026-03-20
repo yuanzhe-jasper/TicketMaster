@@ -25,6 +25,14 @@ public class CreateEventHandler
             APIGatewayProxyRequestEvent request, Context context) {
         try {
             Event event = objectMapper.readValue(request.getBody(), Event.class);
+
+            if (event.getName() == null || event.getVenue() == null || event.getDate() == null) {
+                return new APIGatewayProxyResponseEvent()
+                        .withStatusCode(400)
+                        .withHeaders(Map.of("Content-Type", "application/json"))
+                        .withBody("{\"message\":\"name, venue, and date are required\"}");
+            }
+
             event.setId(UUID.randomUUID().toString());
 
             dynamoDb.putItem(PutItemRequest.builder()
