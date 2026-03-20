@@ -6,55 +6,51 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.model.Event;
+import org.example.repository.DynamoDbEventRepository;
+import org.example.service.EventService;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
-import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 public class GetEventsHandler
         implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
-    private final DynamoDbClient dynamoDb = DynamoDbClient.create();
+    private static final Map<String, String> CORS_HEADERS = Map.of(
+            "Content-Type", "application/json",
+            "Access-Control-Allow-Origin", "*"
+    );
+
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final String tableName = System.getenv("EVENTS_TABLE");
+    private final EventService eventService;
+
+    public GetEventsHandler() {
+        DynamoDbClient dynamoDbClient = DynamoDbClient.create();
+        String tableName = System.getenv("EVENTS_TABLE");
+        this.eventService = new EventService(new DynamoDbEventRepository(dynamoDbClient, tableName));
+    }
+
+    GetEventsHandler(EventService eventService) {
+        this.eventService = eventService;
+    }
 
     @Override
     public APIGatewayProxyResponseEvent handleRequest(
             APIGatewayProxyRequestEvent request, Context context) {
         try {
-            ScanResponse response = dynamoDb.scan(ScanRequest.builder()
-                    .tableName(tableName)
-                    .build());
-
-            List<Event> events = new ArrayList<>();
-            for (Map<String, AttributeValue> item : response.items()) {
-                Event event = new Event();
-                event.setId(item.get("id").s());
-                event.setName(item.get("name").s());
-                event.setVenue(item.get("venue").s());
-                event.setDate(item.get("date").s());
-                event.setAvailableTickets(Integer.parseInt(item.get("availableTickets").n()));
-                events.add(event);
-            }
-
-            return new APIGatewayProxyResponseEvent()
-                    .withStatusCode(200)
-                    .withHeaders(Map.of(
-                            "Content-Type", "application/json",
-                            "Access-Control-Allow-Origin", "*"
-                    ))
-                    .withBody(objectMapper.writeValueAsString(events));
+            List<Event> events = eventService.getAllEvents();
+            return response(200, objectMapper.writeValueAsString(events));
 
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
-            return new APIGatewayProxyResponseEvent()
-                    .withStatusCode(500)
-                    .withHeaders(Map.of("Content-Type", "application/json"))
-                    .withBody("{\"message\":\"Internal Server Error\"}");
+            return response(500, "{\"message\":\"Internal Server Error\"}");
         }
+    }
+
+    private APIGatewayProxyResponseEvent response(int statusCode, String body) {
+        return new APIGatewayProxyResponseEvent()
+                .withStatusCode(statusCode)
+                .withHeaders(CORS_HEADERS)
+                .withBody(body);
     }
 }
