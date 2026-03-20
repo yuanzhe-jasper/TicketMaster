@@ -96,6 +96,10 @@ module "get_events_lambda" {
   environment_variables = {
     ENVIRONMENT = var.environment
   }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "GET /events"
 }
 
 module "create_event_lambda" {
@@ -114,6 +118,10 @@ module "create_event_lambda" {
     ENVIRONMENT  = var.environment
     EVENTS_TABLE = aws_dynamodb_table.events.name
   }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "POST /events"
 }
 
 # ---------------------------------------------------------------------------
@@ -135,51 +143,4 @@ resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.this.id
   name        = "$default"
   auto_deploy = true
-}
-
-# GET /events
-resource "aws_apigatewayv2_integration" "get_events" {
-  api_id                 = aws_apigatewayv2_api.this.id
-  integration_type       = "AWS_PROXY"
-  integration_uri        = module.get_events_lambda.invoke_arn
-  payload_format_version = "1.0"
-}
-
-resource "aws_apigatewayv2_route" "get_events" {
-  api_id    = aws_apigatewayv2_api.this.id
-  route_key = "GET /events"
-  target    = "integrations/${aws_apigatewayv2_integration.get_events.id}"
-}
-
-# Allow API Gateway to invoke the Lambda
-resource "aws_lambda_permission" "get_events" {
-  statement_id  = "AllowAPIGatewayInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = module.get_events_lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
-}
-
-# POST /events
-resource "aws_apigatewayv2_integration" "create_event" {
-  api_id                 = aws_apigatewayv2_api.this.id
-  integration_type       = "AWS_PROXY"
-  integration_uri        = module.create_event_lambda.invoke_arn
-  payload_format_version = "1.0"
-}
-
-resource "aws_apigatewayv2_route" "create_event" {
-  api_id    = aws_apigatewayv2_api.this.id
-  route_key = "POST /events"
-  target    = "integrations/${aws_apigatewayv2_integration.create_event.id}"
-}
-
-# Allow API Gateway to invoke the Lambda
-# TODO: need to use a module for this so we don't need to write resource codes every time
-resource "aws_lambda_permission" "create_event" {
-  statement_id  = "AllowAPIGatewayInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = module.create_event_lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }

@@ -58,3 +58,22 @@ variable "environment" {
   description = "Deployment environment (dev, staging, prod)"
   type        = string
 }
+
+# Optional API Gateway integration
+variable "api_gateway_id" {
+  description = "API Gateway ID to integrate with. If set, creates integration, route, and invoke permission."
+  type        = string
+  default     = null
+}
+
+variable "api_gateway_execution_arn" {
+  description = "Execution ARN of the API Gateway (used for Lambda invoke permission)"
+  type        = string
+  default     = null
+}
+
+variable "api_route_key" {
+  description = "API Gateway route key (e.g. 'GET /events', 'POST /events')"
+  type        = string
+  default     = null
+}
