@@ -98,6 +98,73 @@ resource "aws_iam_policy" "dynamodb_events_write" {
   })
 }
 
+resource "aws_dynamodb_table" "tickets" {
+  name         = "ticketmaster-tickets-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  attribute {
+    name = "eventId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "eventId-index"
+    hash_key        = "eventId"
+    projection_type = "ALL"
+  }
+}
+
+# IAM policy — allows reading from the tickets table (including GSI)
+resource "aws_iam_policy" "dynamodb_tickets_read" {
+  name = "ticketmaster-tickets-read-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:Query"]
+      Resource = [
+        aws_dynamodb_table.tickets.arn,
+        "${aws_dynamodb_table.tickets.arn}/index/*"
+      ]
+    }]
+  })
+}
+
+# IAM policy — allows writing to the tickets table
+resource "aws_iam_policy" "dynamodb_tickets_write" {
+  name = "ticketmaster-tickets-write-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:PutItem"]
+      Resource = aws_dynamodb_table.tickets.arn
+    }]
+  })
+}
+
+# IAM policy — allows deleting from the tickets table
+resource "aws_iam_policy" "dynamodb_tickets_delete" {
+  name = "ticketmaster-tickets-delete-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:DeleteItem"]
+      Resource = aws_dynamodb_table.tickets.arn
+    }]
+  })
+}
+
 # IAM policy — allows deleting from the events table
 resource "aws_iam_policy" "dynamodb_events_delete" {
   name = "ticketmaster-events-delete-${var.environment}"
@@ -225,6 +292,120 @@ module "delete_event_lambda" {
   api_gateway_id            = aws_apigatewayv2_api.this.id
   api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
   api_route_key             = "DELETE /events/{id}"
+}
+
+# ---------------------------------------------------------------------------
+# Ticket Lambda functions
+# ---------------------------------------------------------------------------
+
+module "get_tickets_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-get-tickets-${var.environment}"
+  handler       = "org.example.handlers.GetTicketsHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/get-tickets/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_tickets_read.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "GET /events/{eventId}/tickets"
+}
+
+module "create_ticket_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-create-ticket-${var.environment}"
+  handler       = "org.example.handlers.CreateTicketHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/create-ticket/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_tickets_write.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "POST /events/{eventId}/tickets"
+}
+
+module "get_ticket_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-get-ticket-${var.environment}"
+  handler       = "org.example.handlers.GetTicketHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/get-ticket/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_tickets_read.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "GET /tickets/{id}"
+}
+
+module "update_ticket_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-update-ticket-${var.environment}"
+  handler       = "org.example.handlers.UpdateTicketHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/update-ticket/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_tickets_read.arn, aws_iam_policy.dynamodb_tickets_write.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "PUT /tickets/{id}"
+}
+
+module "delete_ticket_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-delete-ticket-${var.environment}"
+  handler       = "org.example.handlers.DeleteTicketHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/delete-ticket/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_tickets_read.arn, aws_iam_policy.dynamodb_tickets_delete.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "DELETE /tickets/{id}"
 }
 
 # ---------------------------------------------------------------------------
