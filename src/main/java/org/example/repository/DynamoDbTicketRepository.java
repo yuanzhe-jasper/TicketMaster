@@ -8,16 +8,24 @@ import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class DynamoDbTicketRepository implements TicketRepository {
 
     private final DynamoDbTable<Ticket> table;
     private final DynamoDbIndex<Ticket> eventIdIndex;
+    private final DynamoDbClient dynamoDbClient;
+    private final String tableName;
 
     public DynamoDbTicketRepository(DynamoDbClient dynamoDbClient, String tableName) {
+        this.dynamoDbClient = dynamoDbClient;
+        this.tableName = tableName;
         DynamoDbEnhancedClient enhancedClient = DynamoDbEnhancedClient.builder()
                 .dynamoDbClient(dynamoDbClient)
                 .build();
@@ -49,5 +57,38 @@ public class DynamoDbTicketRepository implements TicketRepository {
     @Override
     public void deleteById(String id) {
         table.deleteItem(Key.builder().partitionValue(id).build());
+    }
+
+    @Override
+    public boolean reserveTicket(String id) {
+        try {
+            dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                    .tableName(tableName)
+                    .key(Map.of("id", AttributeValue.fromS(id)))
+                    .updateExpression("SET #s = :sold")
+                    .conditionExpression("#s = :available")
+                    .expressionAttributeNames(Map.of("#s", "status"))
+                    .expressionAttributeValues(Map.of(
+                            ":sold", AttributeValue.fromS("SOLD"),
+                            ":available", AttributeValue.fromS("AVAILABLE")
+                    ))
+                    .build());
+            return true;
+        } catch (ConditionalCheckFailedException e) {
+            return false;
+        }
+    }
+
+    @Override
+    public void releaseTicket(String id) {
+        dynamoDbClient.updateItem(UpdateItemRequest.builder()
+                .tableName(tableName)
+                .key(Map.of("id", AttributeValue.fromS(id)))
+                .updateExpression("SET #s = :available")
+                .expressionAttributeNames(Map.of("#s", "status"))
+                .expressionAttributeValues(Map.of(
+                        ":available", AttributeValue.fromS("AVAILABLE")
+                ))
+                .build());
     }
 }

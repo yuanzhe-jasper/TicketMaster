@@ -10,4 +10,6 @@ public interface TicketRepository {
     Optional<Ticket> findById(String id);
     List<Ticket> findByEventId(String eventId);
     void deleteById(String id);
+    boolean reserveTicket(String id);
+    void releaseTicket(String id);
 }

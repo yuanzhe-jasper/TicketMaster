@@ -165,6 +165,76 @@ resource "aws_iam_policy" "dynamodb_tickets_delete" {
   })
 }
 
+resource "aws_dynamodb_table" "orders" {
+  name         = "ticketmaster-orders-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "userId-index"
+    hash_key        = "userId"
+    projection_type = "ALL"
+  }
+}
+
+# IAM policy — allows reading from the orders table (including GSI)
+resource "aws_iam_policy" "dynamodb_orders_read" {
+  name = "ticketmaster-orders-read-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["dynamodb:GetItem", "dynamodb:Query"]
+      Resource = [
+        aws_dynamodb_table.orders.arn,
+        "${aws_dynamodb_table.orders.arn}/index/*"
+      ]
+    }]
+  })
+}
+
+# IAM policy — allows writing to the orders table
+resource "aws_iam_policy" "dynamodb_orders_write" {
+  name = "ticketmaster-orders-write-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:PutItem", "dynamodb:UpdateItem"]
+      Resource = aws_dynamodb_table.orders.arn
+    }]
+  })
+}
+
+# IAM policy — allows transactional writes across orders and tickets tables
+resource "aws_iam_policy" "dynamodb_orders_transact" {
+  name = "ticketmaster-orders-transact-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["dynamodb:PutItem", "dynamodb:UpdateItem"]
+      Resource = [
+        aws_dynamodb_table.orders.arn,
+        aws_dynamodb_table.tickets.arn
+      ]
+    }]
+  })
+}
+
 # IAM policy — allows deleting from the events table
 resource "aws_iam_policy" "dynamodb_events_delete" {
   name = "ticketmaster-events-delete-${var.environment}"
@@ -406,6 +476,102 @@ module "delete_ticket_lambda" {
   api_gateway_id            = aws_apigatewayv2_api.this.id
   api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
   api_route_key             = "DELETE /tickets/{id}"
+}
+
+# ---------------------------------------------------------------------------
+# Order Lambda functions
+# ---------------------------------------------------------------------------
+
+module "create_order_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-create-order-${var.environment}"
+  handler       = "org.example.handlers.CreateOrderHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/create-order/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_orders_transact.arn, aws_iam_policy.dynamodb_tickets_read.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    ORDERS_TABLE  = aws_dynamodb_table.orders.name
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "POST /orders"
+}
+
+module "get_order_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-get-order-${var.environment}"
+  handler       = "org.example.handlers.GetOrderHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/get-order/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_orders_read.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    ORDERS_TABLE  = aws_dynamodb_table.orders.name
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "GET /orders/{id}"
+}
+
+module "get_user_orders_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-get-user-orders-${var.environment}"
+  handler       = "org.example.handlers.GetUserOrdersHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/get-user-orders/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_orders_read.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    ORDERS_TABLE  = aws_dynamodb_table.orders.name
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "GET /users/{userId}/orders"
+}
+
+module "cancel_order_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-cancel-order-${var.environment}"
+  handler       = "org.example.handlers.CancelOrderHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/cancel-order/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_orders_transact.arn, aws_iam_policy.dynamodb_orders_read.arn]
+
+  environment_variables = {
+    ENVIRONMENT   = var.environment
+    ORDERS_TABLE  = aws_dynamodb_table.orders.name
+    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "POST /orders/{id}/cancel"
 }
 
 # ---------------------------------------------------------------------------
