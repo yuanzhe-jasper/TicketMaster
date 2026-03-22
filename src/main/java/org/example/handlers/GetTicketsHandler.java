@@ -5,12 +5,11 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.example.model.Ticket;
+import org.example.model.PagedResult;
 import org.example.repository.DynamoDbTicketRepository;
 import org.example.service.TicketService;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
-import java.util.List;
 import java.util.Map;
 
 public class GetTicketsHandler
@@ -39,8 +38,14 @@ public class GetTicketsHandler
             APIGatewayProxyRequestEvent request, Context context) {
         try {
             String eventId = request.getPathParameters().get("eventId");
-            List<Ticket> tickets = ticketService.getTicketsByEvent(eventId);
-            return response(200, objectMapper.writeValueAsString(tickets));
+            Map<String, String> queryParams = request.getQueryStringParameters();
+            if (queryParams != null && queryParams.containsKey("limit")) {
+                int limit = Integer.parseInt(queryParams.get("limit"));
+                String nextToken = queryParams.getOrDefault("nextToken", null);
+                PagedResult<?> result = ticketService.getTicketsByEvent(eventId, limit, nextToken);
+                return response(200, objectMapper.writeValueAsString(result));
+            }
+            return response(200, objectMapper.writeValueAsString(ticketService.getTicketsByEvent(eventId)));
 
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());

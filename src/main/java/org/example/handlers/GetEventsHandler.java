@@ -5,12 +5,11 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.example.model.Event;
+import org.example.model.PagedResult;
 import org.example.repository.DynamoDbEventRepository;
 import org.example.service.EventService;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
-import java.util.List;
 import java.util.Map;
 
 public class GetEventsHandler
@@ -38,8 +37,14 @@ public class GetEventsHandler
     public APIGatewayProxyResponseEvent handleRequest(
             APIGatewayProxyRequestEvent request, Context context) {
         try {
-            List<Event> events = eventService.getAllEvents();
-            return response(200, objectMapper.writeValueAsString(events));
+            Map<String, String> queryParams = request.getQueryStringParameters();
+            if (queryParams != null && queryParams.containsKey("limit")) {
+                int limit = Integer.parseInt(queryParams.get("limit"));
+                String nextToken = queryParams.getOrDefault("nextToken", null);
+                PagedResult<?> result = eventService.getAllEvents(limit, nextToken);
+                return response(200, objectMapper.writeValueAsString(result));
+            }
+            return response(200, objectMapper.writeValueAsString(eventService.getAllEvents()));
 
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());

@@ -1,13 +1,19 @@
 package org.example.repository;
 
 import org.example.model.Event;
+import org.example.model.PagedResult;
+import org.example.util.PaginationUtil;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.model.ScanEnhancedRequest;
+import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class DynamoDbEventRepository implements EventRepository {
@@ -35,6 +41,20 @@ public class DynamoDbEventRepository implements EventRepository {
     @Override
     public List<Event> findAll() {
         return table.scan().items().stream().toList();
+    }
+
+    @Override
+    public PagedResult<Event> findAll(int limit, String nextToken) {
+        ScanEnhancedRequest.Builder requestBuilder = ScanEnhancedRequest.builder().limit(limit);
+
+        Map<String, AttributeValue> exclusiveStartKey = PaginationUtil.decodeToken(nextToken);
+        if (exclusiveStartKey != null) {
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<Event> page = table.scan(requestBuilder.build()).iterator().next();
+        String newToken = PaginationUtil.encodeToken(page.lastEvaluatedKey());
+        return new PagedResult<>(page.items(), newToken);
     }
 
     @Override

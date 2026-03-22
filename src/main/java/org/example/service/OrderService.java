@@ -4,6 +4,7 @@ import org.example.exception.OrderNotFoundException;
 import org.example.exception.TicketAlreadyBookedException;
 import org.example.exception.TicketNotFoundException;
 import org.example.model.Order;
+import org.example.model.PagedResult;
 import org.example.model.Ticket;
 import org.example.repository.OrderRepository;
 import org.example.repository.TicketRepository;
@@ -62,6 +63,10 @@ public class OrderService {
 
     public List<Order> getOrdersByUser(String userId) {
         return orderRepository.findByUserId(userId);
+    }
+
+    public PagedResult<Order> getOrdersByUser(String userId, int limit, String nextToken) {
+        return orderRepository.findByUserId(userId, limit, nextToken);
     }
 
     public Order cancelOrder(String id) {

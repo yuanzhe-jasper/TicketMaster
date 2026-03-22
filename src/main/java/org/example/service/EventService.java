@@ -2,6 +2,7 @@ package org.example.service;
 
 import org.example.exception.EventNotFoundException;
 import org.example.model.Event;
+import org.example.model.PagedResult;
 import org.example.repository.EventRepository;
 
 import java.util.List;
@@ -28,6 +29,10 @@ public class EventService {
 
     public List<Event> getAllEvents() {
         return repository.findAll();
+    }
+
+    public PagedResult<Event> getAllEvents(int limit, String nextToken) {
+        return repository.findAll(limit, nextToken);
     }
 
     public Event updateEvent(String id, Event event) {

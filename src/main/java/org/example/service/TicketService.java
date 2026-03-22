@@ -1,6 +1,7 @@
 package org.example.service;
 
 import org.example.exception.TicketNotFoundException;
+import org.example.model.PagedResult;
 import org.example.model.Ticket;
 import org.example.repository.TicketRepository;
 
@@ -32,6 +33,10 @@ public class TicketService {
 
     public List<Ticket> getTicketsByEvent(String eventId) {
         return repository.findByEventId(eventId);
+    }
+
+    public PagedResult<Ticket> getTicketsByEvent(String eventId, int limit, String nextToken) {
+        return repository.findByEventId(eventId, limit, nextToken);
     }
 
     public Ticket updateTicket(String id, Ticket ticket) {

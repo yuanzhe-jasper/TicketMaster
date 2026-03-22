@@ -5,13 +5,12 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.example.model.Order;
+import org.example.model.PagedResult;
 import org.example.repository.DynamoDbOrderRepository;
 import org.example.repository.DynamoDbTicketRepository;
 import org.example.service.OrderService;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
-import java.util.List;
 import java.util.Map;
 
 public class GetUserOrdersHandler
@@ -44,8 +43,14 @@ public class GetUserOrdersHandler
             APIGatewayProxyRequestEvent request, Context context) {
         try {
             String userId = request.getPathParameters().get("userId");
-            List<Order> orders = orderService.getOrdersByUser(userId);
-            return response(200, objectMapper.writeValueAsString(orders));
+            Map<String, String> queryParams = request.getQueryStringParameters();
+            if (queryParams != null && queryParams.containsKey("limit")) {
+                int limit = Integer.parseInt(queryParams.get("limit"));
+                String nextToken = queryParams.getOrDefault("nextToken", null);
+                PagedResult<?> result = orderService.getOrdersByUser(userId, limit, nextToken);
+                return response(200, objectMapper.writeValueAsString(result));
+            }
+            return response(200, objectMapper.writeValueAsString(orderService.getOrdersByUser(userId)));
 
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());

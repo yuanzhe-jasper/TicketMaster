@@ -1,12 +1,16 @@
 package org.example.repository;
 
+import org.example.model.PagedResult;
 import org.example.model.Ticket;
+import org.example.util.PaginationUtil;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
@@ -52,6 +56,25 @@ public class DynamoDbTicketRepository implements TicketRepository {
                 .stream()
                 .flatMap(page -> page.items().stream())
                 .toList();
+    }
+
+    @Override
+    public PagedResult<Ticket> findByEventId(String eventId, int limit, String nextToken) {
+        QueryConditional condition = QueryConditional.keyEqualTo(
+                Key.builder().partitionValue(eventId).build());
+
+        QueryEnhancedRequest.Builder requestBuilder = QueryEnhancedRequest.builder()
+                .queryConditional(condition)
+                .limit(limit);
+
+        Map<String, AttributeValue> exclusiveStartKey = PaginationUtil.decodeToken(nextToken);
+        if (exclusiveStartKey != null) {
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<Ticket> page = eventIdIndex.query(requestBuilder.build()).iterator().next();
+        String newToken = PaginationUtil.encodeToken(page.lastEvaluatedKey());
+        return new PagedResult<>(page.items(), newToken);
     }
 
     @Override

@@ -1,12 +1,16 @@
 package org.example.repository;
 
 import org.example.model.Order;
+import org.example.model.PagedResult;
+import org.example.util.PaginationUtil;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbIndex;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable;
 import software.amazon.awssdk.enhanced.dynamodb.Key;
 import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
+import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
+import software.amazon.awssdk.enhanced.dynamodb.model.QueryEnhancedRequest;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.Put;
@@ -58,6 +62,25 @@ public class DynamoDbOrderRepository implements OrderRepository {
                 .stream()
                 .flatMap(page -> page.items().stream())
                 .toList();
+    }
+
+    @Override
+    public PagedResult<Order> findByUserId(String userId, int limit, String nextToken) {
+        QueryConditional condition = QueryConditional.keyEqualTo(
+                Key.builder().partitionValue(userId).build());
+
+        QueryEnhancedRequest.Builder requestBuilder = QueryEnhancedRequest.builder()
+                .queryConditional(condition)
+                .limit(limit);
+
+        Map<String, AttributeValue> exclusiveStartKey = PaginationUtil.decodeToken(nextToken);
+        if (exclusiveStartKey != null) {
+            requestBuilder.exclusiveStartKey(exclusiveStartKey);
+        }
+
+        Page<Order> page = userIdIndex.query(requestBuilder.build()).iterator().next();
+        String newToken = PaginationUtil.encodeToken(page.lastEvaluatedKey());
+        return new PagedResult<>(page.items(), newToken);
     }
 
     @Override
