@@ -276,6 +276,29 @@ module "get_events_lambda" {
   api_route_key             = "GET /events"
 }
 
+module "search_events_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-search-events-${var.environment}"
+  handler       = "org.example.handlers.SearchEventsHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/search-events/function.jar"
+  environment   = var.environment
+
+  layer_arns = [aws_lambda_layer_version.dependencies.arn]
+
+  additional_policy_arns = [aws_iam_policy.dynamodb_events_read.arn]
+
+  environment_variables = {
+    ENVIRONMENT  = var.environment
+    EVENTS_TABLE = aws_dynamodb_table.events.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "GET /events/search"
+}
+
 module "create_event_lambda" {
   source = "../../modules/lambda"
 
