@@ -22,6 +22,7 @@ dependencies {
     implementation platform('software.amazon.awssdk:bom:2.26.0')
     implementation 'software.amazon.awssdk:dynamodb'
     implementation 'software.amazon.awssdk:dynamodb-enhanced'
+    implementation 'software.amazon.awssdk:sqs'
 
     // JSON
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.0'

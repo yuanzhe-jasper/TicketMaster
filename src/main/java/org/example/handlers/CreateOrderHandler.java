@@ -12,6 +12,8 @@ import org.example.repository.DynamoDbOrderRepository;
 import org.example.repository.DynamoDbTicketRepository;
 import org.example.service.OrderService;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import java.util.Map;
 
@@ -25,6 +27,8 @@ public class CreateOrderHandler
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final OrderService orderService;
+    private final SqsClient sqsClient;
+    private final String orderEventsQueueUrl;
 
     public CreateOrderHandler() {
         DynamoDbClient dynamoDbClient = DynamoDbClient.create();
@@ -34,10 +38,14 @@ public class CreateOrderHandler
                 new DynamoDbOrderRepository(dynamoDbClient, ordersTable, ticketsTable),
                 new DynamoDbTicketRepository(dynamoDbClient, ticketsTable)
         );
+        this.sqsClient = SqsClient.create();
+        this.orderEventsQueueUrl = System.getenv("ORDER_EVENTS_QUEUE_URL");
     }
 
-    CreateOrderHandler(OrderService orderService) {
+    CreateOrderHandler(OrderService orderService, SqsClient sqsClient, String orderEventsQueueUrl) {
         this.orderService = orderService;
+        this.sqsClient = sqsClient;
+        this.orderEventsQueueUrl = orderEventsQueueUrl;
     }
 
     @Override
@@ -53,6 +61,9 @@ public class CreateOrderHandler
 
             Order order = orderService.createOrder(
                     orderRequest.userId, orderRequest.eventId, orderRequest.ticketIds);
+
+            publishOrderEvent(order, "order-created");
+
             context.getLogger().log("Created order: " + order.getId());
             return response(201, objectMapper.writeValueAsString(order));
 
@@ -65,6 +76,26 @@ public class CreateOrderHandler
         } catch (Exception e) {
             context.getLogger().log("Error: " + e.getMessage());
             return response(500, "{\"message\":\"Internal Server Error\"}");
+        }
+    }
+
+    private void publishOrderEvent(Order order, String eventType) {
+        try {
+            Map<String, Object> event = Map.of(
+                    "eventType", eventType,
+                    "orderId", order.getId(),
+                    "userId", order.getUserId(),
+                    "eventId", order.getEventId(),
+                    "totalPrice", order.getTotalPrice(),
+                    "status", order.getStatus(),
+                    "createdAt", order.getCreatedAt()
+            );
+            sqsClient.sendMessage(SendMessageRequest.builder()
+                    .queueUrl(orderEventsQueueUrl)
+                    .messageBody(objectMapper.writeValueAsString(event))
+                    .build());
+        } catch (Exception e) {
+            System.err.println("Failed to publish order event to SQS: " + e.getMessage());
         }
     }
 

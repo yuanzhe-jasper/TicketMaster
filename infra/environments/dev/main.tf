@@ -250,6 +250,27 @@ resource "aws_iam_policy" "dynamodb_events_delete" {
 }
 
 # ---------------------------------------------------------------------------
+# SQS queue — order events
+# ---------------------------------------------------------------------------
+
+resource "aws_sqs_queue" "order_events" {
+  name = "ticketmaster-order-events-${var.environment}"
+}
+
+resource "aws_iam_policy" "sqs_order_events_publish" {
+  name = "ticketmaster-order-events-publish-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["sqs:SendMessage"]
+      Resource = aws_sqs_queue.order_events.arn
+    }]
+  })
+}
+
+# ---------------------------------------------------------------------------
 # Lambda functions
 # ---------------------------------------------------------------------------
 
@@ -515,12 +536,13 @@ module "create_order_lambda" {
   environment   = var.environment
 
   layer_arns             = [aws_lambda_layer_version.dependencies.arn]
-  additional_policy_arns = [aws_iam_policy.dynamodb_orders_transact.arn, aws_iam_policy.dynamodb_tickets_read.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_orders_transact.arn, aws_iam_policy.dynamodb_tickets_read.arn, aws_iam_policy.sqs_order_events_publish.arn]
 
   environment_variables = {
-    ENVIRONMENT   = var.environment
-    ORDERS_TABLE  = aws_dynamodb_table.orders.name
-    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+    ENVIRONMENT             = var.environment
+    ORDERS_TABLE            = aws_dynamodb_table.orders.name
+    TICKETS_TABLE           = aws_dynamodb_table.tickets.name
+    ORDER_EVENTS_QUEUE_URL  = aws_sqs_queue.order_events.url
   }
 
   api_gateway_id            = aws_apigatewayv2_api.this.id
@@ -584,12 +606,13 @@ module "cancel_order_lambda" {
   environment   = var.environment
 
   layer_arns             = [aws_lambda_layer_version.dependencies.arn]
-  additional_policy_arns = [aws_iam_policy.dynamodb_orders_transact.arn, aws_iam_policy.dynamodb_orders_read.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_orders_transact.arn, aws_iam_policy.dynamodb_orders_read.arn, aws_iam_policy.sqs_order_events_publish.arn]
 
   environment_variables = {
-    ENVIRONMENT   = var.environment
-    ORDERS_TABLE  = aws_dynamodb_table.orders.name
-    TICKETS_TABLE = aws_dynamodb_table.tickets.name
+    ENVIRONMENT            = var.environment
+    ORDERS_TABLE           = aws_dynamodb_table.orders.name
+    TICKETS_TABLE          = aws_dynamodb_table.tickets.name
+    ORDER_EVENTS_QUEUE_URL = aws_sqs_queue.order_events.url
   }
 
   api_gateway_id            = aws_apigatewayv2_api.this.id
