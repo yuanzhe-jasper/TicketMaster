@@ -257,6 +257,66 @@ resource "aws_sqs_queue" "order_events" {
   name = "ticketmaster-order-events-${var.environment}"
 }
 
+# ---------------------------------------------------------------------------
+# DynamoDB notifications table
+# ---------------------------------------------------------------------------
+
+resource "aws_dynamodb_table" "notifications" {
+  name         = "ticketmaster-notifications-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "userId"
+  range_key    = "sortKey"
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  attribute {
+    name = "sortKey"
+    type = "S"
+  }
+}
+
+resource "aws_iam_policy" "dynamodb_notifications_write" {
+  name = "ticketmaster-notifications-write-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:PutItem"]
+      Resource = aws_dynamodb_table.notifications.arn
+    }]
+  })
+}
+
+resource "aws_iam_policy" "dynamodb_notifications_read" {
+  name = "ticketmaster-notifications-read-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["dynamodb:Query"]
+      Resource = aws_dynamodb_table.notifications.arn
+    }]
+  })
+}
+
+resource "aws_iam_policy" "sqs_order_events_consume" {
+  name = "ticketmaster-order-events-consume-${var.environment}"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+      Resource = aws_sqs_queue.order_events.arn
+    }]
+  })
+}
+
 resource "aws_iam_policy" "sqs_order_events_publish" {
   name = "ticketmaster-order-events-publish-${var.environment}"
 
@@ -618,6 +678,56 @@ module "cancel_order_lambda" {
   api_gateway_id            = aws_apigatewayv2_api.this.id
   api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
   api_route_key             = "POST /orders/{id}/cancel"
+}
+
+# ---------------------------------------------------------------------------
+# Notification Lambda functions
+# ---------------------------------------------------------------------------
+
+module "process_order_event_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-process-order-event-${var.environment}"
+  handler       = "org.example.handlers.ProcessOrderEventHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/process-order-event/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_notifications_write.arn, aws_iam_policy.sqs_order_events_consume.arn]
+
+  environment_variables = {
+    ENVIRONMENT          = var.environment
+    NOTIFICATIONS_TABLE  = aws_dynamodb_table.notifications.name
+  }
+}
+
+resource "aws_lambda_event_source_mapping" "order_events" {
+  event_source_arn = aws_sqs_queue.order_events.arn
+  function_name    = module.process_order_event_lambda.function_arn
+  batch_size       = 10
+}
+
+module "get_notifications_lambda" {
+  source = "../../modules/lambda"
+
+  function_name = "ticketmaster-get-notifications-${var.environment}"
+  handler       = "org.example.handlers.GetNotificationsHandler::handleRequest"
+  s3_bucket     = aws_s3_bucket.lambda_artifacts.bucket
+  s3_key        = "functions/get-notifications/function.jar"
+  environment   = var.environment
+
+  layer_arns             = [aws_lambda_layer_version.dependencies.arn]
+  additional_policy_arns = [aws_iam_policy.dynamodb_notifications_read.arn]
+
+  environment_variables = {
+    ENVIRONMENT         = var.environment
+    NOTIFICATIONS_TABLE = aws_dynamodb_table.notifications.name
+  }
+
+  api_gateway_id            = aws_apigatewayv2_api.this.id
+  api_gateway_execution_arn = aws_apigatewayv2_api.this.execution_arn
+  api_route_key             = "GET /users/{userId}/notifications"
 }
 
 # ---------------------------------------------------------------------------
